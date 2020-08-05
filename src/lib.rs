@@ -3,7 +3,7 @@ use itertools::Itertools;
 
 pub type VecImage<T> = (u8, u8, T);
 
-pub struct Numbers<T: AsRef<[u8]>> {
+pub struct Numbers<T: AsRef<[u8]>, C: Edit> {
     height: u8,
     n0: VecImage<T>,
     n1: VecImage<T>,
@@ -16,9 +16,10 @@ pub struct Numbers<T: AsRef<[u8]>> {
     n8: VecImage<T>,
     n9: VecImage<T>,
     period: VecImage<T>,
+    container: C,
 }
 
-impl<T: AsRef<[u8]>> Numbers<T> {
+impl<T: AsRef<[u8]>, C: Edit> Numbers<T, C> {
     pub fn new(
         height: u8,
         n0: VecImage<T>,
@@ -32,6 +33,7 @@ impl<T: AsRef<[u8]>> Numbers<T> {
         n8: VecImage<T>,
         n9: VecImage<T>,
         period: VecImage<T>,
+        container: C,
     ) -> Self {
         Self {
             height,
@@ -46,6 +48,7 @@ impl<T: AsRef<[u8]>> Numbers<T> {
             n8,
             n9,
             period,
+            container,
         }
     }
 
@@ -69,7 +72,7 @@ impl<T: AsRef<[u8]>> Numbers<T> {
         self.img(n).0
     }
 
-    pub fn num_vec(&self, n: usize) -> (usize, [(u8, u8); 16], usize, usize) {
+    pub fn split_into_each_digit(&self, n: usize) -> (usize, [(u8, u8); 16], usize, usize) {
         let mut nums = [(0, 0); 16];
         let mut l = 0;
         let mut now = n;
@@ -89,36 +92,42 @@ impl<T: AsRef<[u8]>> Numbers<T> {
         self.img(n).2.as_ref()
     }
 
-    pub fn generate(&self, n: usize) -> (usize, usize, Vec<bool>) {
-        let (l, v, canvas_w, canvas_h) = self.num_vec(n);
-        let mut data = vec![false; canvas_w as usize * canvas_h as usize];
+    pub fn generate(&mut self, n: usize) -> (usize, usize) {
+        let (l, v, canvas_w, canvas_h) = self.split_into_each_digit(n);
 
         let mut offset = 0;
 
         for (n, w) in v[0..l].iter().rev() {
-            self.pixels(*n)
+            let a = self
+                .pixels(*n)
                 .iter()
                 .map(|n| *n)
                 .flat_map(|n| BitIterator::from(n))
                 .take(*w as usize * canvas_h)
-                .chunks(*w as usize)
+                .collect::<Vec<_>>();
+
+            a.chunks(*w as usize)
                 .into_iter()
                 .enumerate()
                 .for_each(|(y, row)| {
-                    row.into_iter()
-                        .enumerate()
-                        .for_each(|(step_x, b)| data[y * canvas_w + offset + step_x] = b);
+                    row.into_iter().enumerate().for_each(|(step_x, b)| {
+                        self.container.edit(y * canvas_w + offset + step_x, *b)
+                    });
                 });
             offset += *w as usize + 1;
         }
 
-        (canvas_w, canvas_h, data)
+        (canvas_w, canvas_h)
     }
+}
+
+pub trait Edit {
+    fn edit(&mut self, index: usize, b: bool);
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::Numbers;
+    use crate::{Edit, Numbers};
     use itertools::Itertools;
 
     const VEC_NUM_1: (u8, u8, [u8; 10]) = (3, 10, [0, 44, 151, 0, 0, 0, 0, 0, 0, 0]);
@@ -133,14 +142,20 @@ mod tests {
     const VEC_NUM_0: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 232, 198, 46, 0, 0, 0, 0, 0]);
     const VEC_NUM_PERIOD: (u8, u8, [u8; 10]) = (2, 10, [0, 15, 0, 0, 0, 0, 0, 0, 0, 0]);
 
-    fn print(canvas_w: usize, data: &[bool]) {
-        for row in &data.iter().chunks(canvas_w) {
+    fn print(canvas_w: usize, canvas_h: usize, data: &[bool]) {
+        for row in &data.iter().take(canvas_w * canvas_h).chunks(canvas_w) {
             row.for_each(|b| print!("{}", if *b { "■" } else { "□" }));
             print!("\n");
         }
     }
 
-    fn numbers() -> Numbers<[u8; 10]> {
+    impl Edit for [bool; 300] {
+        fn edit(&mut self, index: usize, b: bool) {
+            self[index] = b;
+        }
+    }
+
+    fn numbers() -> Numbers<[u8; 10], [bool; 300]> {
         Numbers::new(
             10,
             VEC_NUM_0,
@@ -154,14 +169,15 @@ mod tests {
             VEC_NUM_8,
             VEC_NUM_9,
             VEC_NUM_PERIOD,
+            [false; 300],
         )
     }
 
     #[test]
     fn test() {
-        let n = numbers();
+        let mut n = numbers();
 
-        let (w, h, data) = n.generate(11185);
-        print(w, &data);
+        let (w, h) = n.generate(11185);
+        print(w, h, &n.container);
     }
 }

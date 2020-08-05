@@ -1,38 +1,37 @@
 use bit_iterator::BitIterator;
 use itertools::Itertools;
 
-pub type NumberVecImage<T> = (usize, usize, Vec<T>);
-pub type VecImage = (usize, usize, Vec<bool>);
+pub type VecImage<T> = (u8, u8, T);
 
-pub struct Numbers {
-    height: usize,
-    n0: VecImage,
-    n1: VecImage,
-    n2: VecImage,
-    n3: VecImage,
-    n4: VecImage,
-    n5: VecImage,
-    n6: VecImage,
-    n7: VecImage,
-    n8: VecImage,
-    n9: VecImage,
-    period: VecImage,
+pub struct Numbers<T> {
+    height: u8,
+    n0: VecImage<T>,
+    n1: VecImage<T>,
+    n2: VecImage<T>,
+    n3: VecImage<T>,
+    n4: VecImage<T>,
+    n5: VecImage<T>,
+    n6: VecImage<T>,
+    n7: VecImage<T>,
+    n8: VecImage<T>,
+    n9: VecImage<T>,
+    period: VecImage<T>,
 }
 
-impl Numbers {
+impl<T> Numbers<T> {
     pub fn new(
-        height: usize,
-        n0: VecImage,
-        n1: VecImage,
-        n2: VecImage,
-        n3: VecImage,
-        n4: VecImage,
-        n5: VecImage,
-        n6: VecImage,
-        n7: VecImage,
-        n8: VecImage,
-        n9: VecImage,
-        period: VecImage,
+        height: u8,
+        n0: VecImage<T>,
+        n1: VecImage<T>,
+        n2: VecImage<T>,
+        n3: VecImage<T>,
+        n4: VecImage<T>,
+        n5: VecImage<T>,
+        n6: VecImage<T>,
+        n7: VecImage<T>,
+        n8: VecImage<T>,
+        n9: VecImage<T>,
+        period: VecImage<T>,
     ) -> Self {
         Self {
             height,
@@ -50,61 +49,7 @@ impl Numbers {
         }
     }
 
-    pub fn from_u8(
-        height: usize,
-        n0: NumberVecImage<u8>,
-        n1: NumberVecImage<u8>,
-        n2: NumberVecImage<u8>,
-        n3: NumberVecImage<u8>,
-        n4: NumberVecImage<u8>,
-        n5: NumberVecImage<u8>,
-        n6: NumberVecImage<u8>,
-        n7: NumberVecImage<u8>,
-        n8: NumberVecImage<u8>,
-        n9: NumberVecImage<u8>,
-        period: NumberVecImage<u8>,
-    ) -> Self {
-        Self::new(
-            height,
-            Self::normalize_u8(n0, height),
-            Self::normalize_u8(n1, height),
-            Self::normalize_u8(n2, height),
-            Self::normalize_u8(n3, height),
-            Self::normalize_u8(n4, height),
-            Self::normalize_u8(n5, height),
-            Self::normalize_u8(n6, height),
-            Self::normalize_u8(n7, height),
-            Self::normalize_u8(n8, height),
-            Self::normalize_u8(n9, height),
-            Self::normalize_u8(period, height),
-        )
-    }
-
-    fn normalize_u8(src: NumberVecImage<u8>, height: usize) -> VecImage {
-        let (w, h, bit_n) = src;
-
-        let all = bit_n
-            .into_iter()
-            .flat_map(|n| BitIterator::from(n))
-            .take(w * height)
-            .collect::<Vec<_>>();
-
-        // #[cfg(test)]
-        // Self::tester(w, &all);
-
-        (w, h, all)
-    }
-
-    #[cfg(test)]
-    fn tester(w: usize, bits: &[bool]) {
-        for row in bits.chunks(w) {
-            row.iter().for_each(|v| print!("{}", *v as u8));
-            print!("\n");
-        }
-        print!("\n");
-    }
-
-    fn img(&self, n: u8) -> &VecImage {
+    fn img(&self, n: u8) -> &VecImage<T> {
         match n {
             0 => &self.n0,
             1 => &self.n1,
@@ -120,22 +65,52 @@ impl Numbers {
         }
     }
 
-    fn w(&self, n: u8) -> usize {
+    fn w(&self, n: u8) -> u8 {
         self.img(n).0
     }
 
-    pub fn generate(&self, n: usize) {
-        let mut nums = vec![];
+    pub fn num_vec(&self, n: usize) -> (usize, [(u8, u8); 16], Vec<bool>) {
+        let mut nums = [(0, 0); 16];
+        let mut l = 0;
         let mut now = n;
         let mut width = 0;
         while now > 0 {
             let n = (now % 10) as u8;
-            width += self.w(n);
-            nums.push(n);
+            let w = self.w(n);
+            width += w;
+            nums[l] = (n, w);
+            l += 1;
             now /= 10
         }
 
-        println!("{:?}", nums);
+        println!("{:?}", nums.as_ref());
+
+        (l, nums, vec![false; (width * self.height) as usize])
+    }
+}
+
+impl Numbers<[u8; 10]> {
+    fn bits(&self, n: u8) -> &[u8] {
+        &self.img(n).2
+    }
+
+    pub fn generate(&self, n: usize) {
+        let (l, v, img) = self.num_vec(n);
+        let offset = 0;
+        for (n, w) in v[0..l].iter().rev() {
+            let it = self
+                .bits(*n)
+                .iter()
+                .map(|n| *n)
+                .flat_map(|n| BitIterator::from(n))
+                .take((w * self.height) as usize)
+                .chunks(*w as usize)
+                .into_iter()
+                .for_each(|row| {
+                    row.into_iter().for_each(|b| print!("{}", b as u8));
+                    print!("\n")
+                });
+        }
     }
 }
 
@@ -143,32 +118,32 @@ impl Numbers {
 mod tests {
     use crate::Numbers;
 
-    const VEC_NUM_1: (usize, usize, [u8; 10]) = (3, 10, [0, 44, 151, 0, 0, 0, 0, 0, 0, 0]);
-    const VEC_NUM_2: (usize, usize, [u8; 10]) = (5, 10, [0, 0, 232, 136, 159, 0, 0, 0, 0, 0]);
-    const VEC_NUM_3: (usize, usize, [u8; 10]) = (5, 10, [0, 0, 232, 132, 193, 139, 128, 0, 0, 0]);
-    const VEC_NUM_4: (usize, usize, [u8; 10]) = (5, 10, [0, 0, 35, 42, 95, 16, 128, 0, 0, 0]);
-    const VEC_NUM_5: (usize, usize, [u8; 10]) = (5, 10, [0, 0, 244, 56, 33, 139, 128, 0, 0, 0]);
-    const VEC_NUM_6: (usize, usize, [u8; 10]) = (5, 10, [34, 33, 232, 198, 46, 0, 0, 0, 0, 0]);
-    const VEC_NUM_7: (usize, usize, [u8; 10]) = (5, 10, [0, 1, 248, 200, 68, 33, 0, 0, 0, 0]);
-    const VEC_NUM_8: (usize, usize, [u8; 10]) = (5, 10, [116, 98, 232, 198, 46, 0, 0, 0, 0, 0]);
-    const VEC_NUM_9: (usize, usize, [u8; 10]) = (5, 10, [0, 0, 232, 197, 225, 17, 0, 0, 0, 0]);
-    const VEC_NUM_0: (usize, usize, [u8; 10]) = (5, 10, [0, 0, 232, 198, 46, 0, 0, 0, 0, 0]);
-    const VEC_NUM_PERIOD: (usize, usize, [u8; 10]) = (2, 10, [0, 15, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const VEC_NUM_1: (u8, u8, [u8; 10]) = (3, 10, [0, 44, 151, 0, 0, 0, 0, 0, 0, 0]);
+    const VEC_NUM_2: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 232, 136, 159, 0, 0, 0, 0, 0]);
+    const VEC_NUM_3: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 232, 132, 193, 139, 128, 0, 0, 0]);
+    const VEC_NUM_4: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 35, 42, 95, 16, 128, 0, 0, 0]);
+    const VEC_NUM_5: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 244, 56, 33, 139, 128, 0, 0, 0]);
+    const VEC_NUM_6: (u8, u8, [u8; 10]) = (5, 10, [34, 33, 232, 198, 46, 0, 0, 0, 0, 0]);
+    const VEC_NUM_7: (u8, u8, [u8; 10]) = (5, 10, [0, 1, 248, 200, 68, 33, 0, 0, 0, 0]);
+    const VEC_NUM_8: (u8, u8, [u8; 10]) = (5, 10, [116, 98, 232, 198, 46, 0, 0, 0, 0, 0]);
+    const VEC_NUM_9: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 232, 197, 225, 17, 0, 0, 0, 0]);
+    const VEC_NUM_0: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 232, 198, 46, 0, 0, 0, 0, 0]);
+    const VEC_NUM_PERIOD: (u8, u8, [u8; 10]) = (2, 10, [0, 15, 0, 0, 0, 0, 0, 0, 0, 0]);
 
-    fn numbers() -> Numbers {
-        Numbers::from_u8(
+    fn numbers() -> Numbers<[u8; 10]> {
+        Numbers::new(
             10,
-            (5, 10, vec![0, 0, 232, 198, 46, 0, 0]),
-            (3, 10, vec![0, 44, 151, 0]),
-            (5, 10, vec![0, 0, 232, 136, 159, 0, 0]),
-            (5, 10, vec![0, 0, 232, 132, 193, 139, 128]),
-            (5, 10, vec![0, 0, 35, 42, 95, 16, 128]),
-            (5, 10, vec![0, 0, 244, 56, 33, 139, 128]),
-            (5, 10, vec![34, 33, 232, 198, 46, 0, 0]),
-            (5, 10, vec![0, 1, 248, 200, 68, 33, 0]),
-            (5, 10, vec![116, 98, 232, 198, 46, 0, 0]),
-            (5, 10, vec![0, 0, 232, 197, 225, 17, 0]),
-            (2, 10, vec![0, 15, 0]),
+            VEC_NUM_0,
+            VEC_NUM_1,
+            VEC_NUM_2,
+            VEC_NUM_3,
+            VEC_NUM_4,
+            VEC_NUM_5,
+            VEC_NUM_6,
+            VEC_NUM_7,
+            VEC_NUM_8,
+            VEC_NUM_9,
+            VEC_NUM_PERIOD,
         )
     }
 

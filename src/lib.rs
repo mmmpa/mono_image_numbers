@@ -19,6 +19,12 @@ pub trait DataContainer {
 pub const MINUS: u8 = 254;
 pub const PERIOD: u8 = 255;
 
+struct PassArgument {
+    length: usize,
+    char_and_width: [(u8, u8); 16],
+    canvas_width: usize,
+}
+
 impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
     pub fn new(height: u8, provider: P, container: C) -> Self {
         Self {
@@ -28,7 +34,7 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
         }
     }
 
-    fn each_digit(&self, n: isize) -> (usize, [(u8, u8); 16], usize) {
+    fn each_digit(&self, n: isize) -> PassArgument {
         let mut char_and_width = [(0, 0); 16];
         let mut length = 0;
         let mut now = n;
@@ -43,7 +49,7 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
         while now > 0 {
             let n = (now % 10) as u8;
             let w = self.provider.width(n);
-            canvas_width += w;
+            canvas_width += w as usize;
             char_and_width[length] = (n, w);
             length += 1;
             now /= 10
@@ -51,20 +57,31 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
 
         if minus {
             let w = self.provider.width(MINUS);
-            canvas_width += w;
+            canvas_width += w as usize;
             char_and_width[length] = (MINUS, w);
             length += 1;
         }
 
-        (length, char_and_width, canvas_width as usize + (length - 1))
+        // margin between chars
+        canvas_width += (length - 1);
+
+        PassArgument {
+            length,
+            char_and_width,
+            canvas_width,
+        }
     }
 
-    pub fn update_c(&mut self, each: (usize, [(u8, u8); 16], usize)) -> (usize, usize) {
-        let (l, v, canvas_w) = each;
+    fn update_container(&mut self, each: PassArgument) -> (usize, usize) {
+        let PassArgument {
+            length,
+            char_and_width,
+            canvas_width: canvas_w,
+        } = each;
         let canvas_h = self.height as usize;
         let mut offset = 0;
 
-        for (i, (char, char_width)) in v[0..l].iter().rev().enumerate() {
+        for (i, (char, char_width)) in char_and_width[0..length].iter().rev().enumerate() {
             let owned = self
                 .provider
                 .pixels(*char)
@@ -86,7 +103,7 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
 
             offset += *char_width as usize + 1;
 
-            if i == l - 1 {
+            if i == length - 1 {
                 break;
             }
 
@@ -100,22 +117,33 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
     }
 
     pub fn update(&mut self, n: isize) -> (usize, usize) {
-        self.update_c(self.each_digit(n))
+        self.update_container(self.each_digit(n))
     }
 
     pub fn update_f(&mut self, f: f64, level: usize) -> (usize, usize) {
+        // at first, build not float data
+
         let n = (f * (10_i32.pow(level as u32) as f64) as f64).floor() as isize;
-        let (l, mut v, canvas_w) = self.each_digit(n);
+        let PassArgument {
+            length,
+            mut char_and_width,
+            canvas_width: canvas_w,
+        } = self.each_digit(n);
 
-        let w = self.provider.width(PERIOD);
+        // then insert period
+        let period_width = self.provider.width(PERIOD);
 
-        for i in (level..l + 1).into_iter().rev() {
-            v[i + 1] = v[i];
+        for i in (level..length + 1).into_iter().rev() {
+            char_and_width[i + 1] = char_and_width[i];
         }
 
-        v[level as usize] = (PERIOD, w);
+        char_and_width[level] = (PERIOD, period_width);
 
-        self.update_c((l + 1, v, canvas_w + w as usize + 1))
+        self.update_container(PassArgument {
+            length: length + 1,
+            char_and_width,
+            canvas_width: canvas_w + period_width as usize + 1,
+        })
     }
 }
 

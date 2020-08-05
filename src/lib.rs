@@ -1,6 +1,6 @@
 use bit_iterator::BitIterator;
 
-pub struct MonoImageNumberGenerator<P: SourceProvider, C: DataContainer> {
+pub struct MonoImageNumbers<P: SourceProvider, C: DataContainer> {
     height: u8,
     provider: P,
     container: C,
@@ -16,7 +16,7 @@ pub trait DataContainer {
     fn data(&self) -> &[bool];
 }
 
-impl<P: SourceProvider, C: DataContainer> MonoImageNumberGenerator<P, C> {
+impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
     pub fn new(height: u8, provider: P, container: C) -> Self {
         Self {
             height,
@@ -85,7 +85,7 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumberGenerator<P, C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{DataContainer, MonoImageNumberGenerator, SourceProvider};
+    use crate::{DataContainer, MonoImageNumbers, SourceProvider};
     use itertools::Itertools;
 
     const VEC_NUM_1: (u8, u8, [u8; 10]) = (3, 10, [0, 44, 151, 0, 0, 0, 0, 0, 0, 0]);
@@ -156,8 +156,8 @@ mod tests {
         }
     }
 
-    fn numbers() -> MonoImageNumberGenerator<ProviderClient, ContainerClient> {
-        MonoImageNumberGenerator::new(10, ProviderClient, ContainerClient([false; 300]))
+    fn numbers() -> MonoImageNumbers<ProviderClient, ContainerClient> {
+        MonoImageNumbers::new(10, ProviderClient, ContainerClient([false; 300]))
     }
 
     #[test]

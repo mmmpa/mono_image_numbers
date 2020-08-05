@@ -1,5 +1,4 @@
 use bit_iterator::BitIterator;
-use std::mem::swap;
 
 pub struct MonoImageNumbers<P: SourceProvider, C: DataContainer> {
     height: u8,
@@ -29,11 +28,11 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
         }
     }
 
-    fn each_digit(&self, n: isize) -> (usize, [(u8, u8); 16], usize, usize) {
-        let mut nums = [(0, 0); 16];
-        let mut l = 0;
+    fn each_digit(&self, n: isize) -> (usize, [(u8, u8); 16], usize) {
+        let mut char_and_width = [(0, 0); 16];
+        let mut length = 0;
         let mut now = n;
-        let mut width = 0;
+        let mut canvas_width = 0;
         let mut minus = false;
 
         if now < 0 {
@@ -44,38 +43,39 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
         while now > 0 {
             let n = (now % 10) as u8;
             let w = self.provider.width(n);
-            width += w;
-            nums[l] = (n, w);
-            l += 1;
+            canvas_width += w;
+            char_and_width[length] = (n, w);
+            length += 1;
             now /= 10
         }
 
         if minus {
             let w = self.provider.width(MINUS);
-            width += w;
-            nums[l] = (MINUS, w);
-            l += 1;
+            canvas_width += w;
+            char_and_width[length] = (MINUS, w);
+            length += 1;
         }
 
-        (l, nums, width as usize + (l - 1), self.height as usize)
+        (length, char_and_width, canvas_width as usize + (length - 1))
     }
 
-    pub fn update_c(&mut self, each: (usize, [(u8, u8); 16], usize, usize)) -> (usize, usize) {
-        let (l, v, canvas_w, canvas_h) = each;
+    pub fn update_c(&mut self, each: (usize, [(u8, u8); 16], usize)) -> (usize, usize) {
+        let (l, v, canvas_w) = each;
+        let canvas_h = self.height as usize;
         let mut offset = 0;
 
-        for (i, (n, w)) in v[0..l].iter().rev().enumerate() {
+        for (i, (char, char_width)) in v[0..l].iter().rev().enumerate() {
             let owned = self
                 .provider
-                .pixels(*n)
+                .pixels(*char)
                 .iter()
                 .map(|n| *n)
                 .flat_map(|n| BitIterator::from(n))
-                .take(*w as usize * canvas_h)
+                .take(*char_width as usize * canvas_h)
                 .collect::<Vec<_>>();
 
             owned
-                .chunks(*w as usize)
+                .chunks(*char_width as usize)
                 .into_iter()
                 .enumerate()
                 .for_each(|(y, row)| {
@@ -84,7 +84,7 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
                     });
                 });
 
-            offset += *w as usize + 1;
+            offset += *char_width as usize + 1;
 
             if i == l - 1 {
                 break;
@@ -105,7 +105,7 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
 
     pub fn update_f(&mut self, f: f64, level: usize) -> (usize, usize) {
         let n = (f * (10_i32.pow(level as u32) as f64) as f64).floor() as isize;
-        let (mut l, mut v, mut canvas_w, canvas_h) = self.each_digit(n);
+        let (l, mut v, canvas_w) = self.each_digit(n);
 
         let w = self.provider.width(PERIOD);
 
@@ -115,10 +115,7 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
 
         v[level as usize] = (PERIOD, w);
 
-        l += 1;
-        canvas_w += w as usize + 1;
-
-        self.update_c((l, v, canvas_w, canvas_h))
+        self.update_c((l + 1, v, canvas_w + w as usize + 1))
     }
 }
 
@@ -206,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn test() {
+    fn test_normal() {
         let mut n = numbers();
 
         let (w, h) = n.update(11185);
@@ -227,7 +224,13 @@ mod tests {
 "#,
             to_s(w, h, n.container.data())
         );
+    }
 
+    #[test]
+    fn test_update() {
+        let mut n = numbers();
+
+        n.update(11185);
         let (w, h) = n.update(20);
         assert_eq!(11, w);
         assert_eq!(10, h);
@@ -246,6 +249,11 @@ mod tests {
 "#,
             to_s(w, h, n.container.data())
         );
+    }
+
+    #[test]
+    fn test_minus() {
+        let mut n = numbers();
 
         let (w, h) = n.update(-119);
         assert_eq!(18, w);
@@ -265,6 +273,11 @@ mod tests {
 "#,
             to_s(w, h, n.container.data())
         );
+    }
+
+    #[test]
+    fn test_float() {
+        let mut n = numbers();
 
         let (w, h) = n.update_f(-19.1234, 2);
         assert_eq!(27, w);

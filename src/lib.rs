@@ -1,38 +1,38 @@
 use bit_iterator::BitIterator;
 use itertools::Itertools;
 
-pub type VecImage<T> = (u8, u8, T);
+pub type ImageNumberSource<T> = (u8, u8, T);
 
-pub struct Numbers<T: AsRef<[u8]>, C: Edit> {
+pub struct ImageNumberGenerator<T: AsRef<[u8]>, C: ImageNumberContainer> {
     height: u8,
-    n0: VecImage<T>,
-    n1: VecImage<T>,
-    n2: VecImage<T>,
-    n3: VecImage<T>,
-    n4: VecImage<T>,
-    n5: VecImage<T>,
-    n6: VecImage<T>,
-    n7: VecImage<T>,
-    n8: VecImage<T>,
-    n9: VecImage<T>,
-    period: VecImage<T>,
+    n0: ImageNumberSource<T>,
+    n1: ImageNumberSource<T>,
+    n2: ImageNumberSource<T>,
+    n3: ImageNumberSource<T>,
+    n4: ImageNumberSource<T>,
+    n5: ImageNumberSource<T>,
+    n6: ImageNumberSource<T>,
+    n7: ImageNumberSource<T>,
+    n8: ImageNumberSource<T>,
+    n9: ImageNumberSource<T>,
+    period: ImageNumberSource<T>,
     container: C,
 }
 
-impl<T: AsRef<[u8]>, C: Edit> Numbers<T, C> {
+impl<T: AsRef<[u8]>, C: ImageNumberContainer> ImageNumberGenerator<T, C> {
     pub fn new(
         height: u8,
-        n0: VecImage<T>,
-        n1: VecImage<T>,
-        n2: VecImage<T>,
-        n3: VecImage<T>,
-        n4: VecImage<T>,
-        n5: VecImage<T>,
-        n6: VecImage<T>,
-        n7: VecImage<T>,
-        n8: VecImage<T>,
-        n9: VecImage<T>,
-        period: VecImage<T>,
+        n0: ImageNumberSource<T>,
+        n1: ImageNumberSource<T>,
+        n2: ImageNumberSource<T>,
+        n3: ImageNumberSource<T>,
+        n4: ImageNumberSource<T>,
+        n5: ImageNumberSource<T>,
+        n6: ImageNumberSource<T>,
+        n7: ImageNumberSource<T>,
+        n8: ImageNumberSource<T>,
+        n9: ImageNumberSource<T>,
+        period: ImageNumberSource<T>,
         container: C,
     ) -> Self {
         Self {
@@ -52,7 +52,7 @@ impl<T: AsRef<[u8]>, C: Edit> Numbers<T, C> {
         }
     }
 
-    fn img(&self, n: u8) -> &VecImage<T> {
+    fn img(&self, n: u8) -> &ImageNumberSource<T> {
         match n {
             0 => &self.n0,
             1 => &self.n1,
@@ -64,6 +64,7 @@ impl<T: AsRef<[u8]>, C: Edit> Numbers<T, C> {
             7 => &self.n7,
             8 => &self.n8,
             9 => &self.n9,
+            255 => &self.period,
             _ => &self.n0, // unreachable
         }
     }
@@ -88,17 +89,18 @@ impl<T: AsRef<[u8]>, C: Edit> Numbers<T, C> {
 
         (l, nums, width as usize + (l - 1), self.height as usize)
     }
+
     fn pixels(&self, n: u8) -> &[u8] {
         self.img(n).2.as_ref()
     }
 
-    pub fn generate(&mut self, n: usize) -> (usize, usize) {
+    pub fn update_container(&mut self, n: usize) -> (usize, usize) {
         let (l, v, canvas_w, canvas_h) = self.split_into_each_digit(n);
 
         let mut offset = 0;
 
-        for (n, w) in v[0..l].iter().rev() {
-            let a = self
+        for (i, (n, w)) in v[0..l].iter().rev().enumerate() {
+            let owned = self
                 .pixels(*n)
                 .iter()
                 .map(|n| *n)
@@ -106,7 +108,8 @@ impl<T: AsRef<[u8]>, C: Edit> Numbers<T, C> {
                 .take(*w as usize * canvas_h)
                 .collect::<Vec<_>>();
 
-            a.chunks(*w as usize)
+            owned
+                .chunks(*w as usize)
                 .into_iter()
                 .enumerate()
                 .for_each(|(y, row)| {
@@ -114,20 +117,35 @@ impl<T: AsRef<[u8]>, C: Edit> Numbers<T, C> {
                         self.container.edit(y * canvas_w + offset + step_x, *b)
                     });
                 });
+
             offset += *w as usize + 1;
+
+            if i == l - 1 {
+                break;
+            }
+
+            // 文字間のスペース分の古いピクセルを消す
+            for y in 0..canvas_h {
+                self.container.edit(y * canvas_w + offset - 1, false)
+            }
         }
 
         (canvas_w, canvas_h)
     }
 }
 
-pub trait Edit {
+pub trait Provider {
+    fn src(&self, n: u8) -> &[u8];
+    fn w(&self, n: u8) -> u8;
+}
+
+pub trait ImageNumberContainer {
     fn edit(&mut self, index: usize, b: bool);
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{Edit, Numbers};
+    use crate::{ImageNumberContainer, ImageNumberGenerator};
     use itertools::Itertools;
 
     const VEC_NUM_1: (u8, u8, [u8; 10]) = (3, 10, [0, 44, 151, 0, 0, 0, 0, 0, 0, 0]);
@@ -149,14 +167,14 @@ mod tests {
         }
     }
 
-    impl Edit for [bool; 300] {
+    impl ImageNumberContainer for [bool; 300] {
         fn edit(&mut self, index: usize, b: bool) {
             self[index] = b;
         }
     }
 
-    fn numbers() -> Numbers<[u8; 10], [bool; 300]> {
-        Numbers::new(
+    fn numbers() -> ImageNumberGenerator<[u8; 10], [bool; 300]> {
+        ImageNumberGenerator::new(
             10,
             VEC_NUM_0,
             VEC_NUM_1,
@@ -177,7 +195,10 @@ mod tests {
     fn test() {
         let mut n = numbers();
 
-        let (w, h) = n.generate(11185);
+        let (w, h) = n.update_container(11185);
+        print(w, h, &n.container);
+
+        let (w, h) = n.update_container(20);
         print(w, h, &n.container);
     }
 }

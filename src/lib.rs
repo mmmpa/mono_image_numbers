@@ -3,84 +3,38 @@ use itertools::Itertools;
 
 pub type ImageNumberSource<T> = (u8, u8, T);
 
-pub struct ImageNumberGenerator<T: AsRef<[u8]>, C: ImageNumberContainer> {
+pub struct ImageNumberGenerator<P: ImageDataProvider, C: ImageNumberContainer> {
     height: u8,
-    n0: ImageNumberSource<T>,
-    n1: ImageNumberSource<T>,
-    n2: ImageNumberSource<T>,
-    n3: ImageNumberSource<T>,
-    n4: ImageNumberSource<T>,
-    n5: ImageNumberSource<T>,
-    n6: ImageNumberSource<T>,
-    n7: ImageNumberSource<T>,
-    n8: ImageNumberSource<T>,
-    n9: ImageNumberSource<T>,
-    period: ImageNumberSource<T>,
+    provider: P,
     container: C,
 }
 
-impl<T: AsRef<[u8]>, C: ImageNumberContainer> ImageNumberGenerator<T, C> {
-    pub fn new(
-        height: u8,
-        n0: ImageNumberSource<T>,
-        n1: ImageNumberSource<T>,
-        n2: ImageNumberSource<T>,
-        n3: ImageNumberSource<T>,
-        n4: ImageNumberSource<T>,
-        n5: ImageNumberSource<T>,
-        n6: ImageNumberSource<T>,
-        n7: ImageNumberSource<T>,
-        n8: ImageNumberSource<T>,
-        n9: ImageNumberSource<T>,
-        period: ImageNumberSource<T>,
-        container: C,
-    ) -> Self {
+pub trait ImageDataProvider {
+    fn pixels(&self, n: u8) -> &[u8];
+    fn width(&self, n: u8) -> u8;
+}
+
+pub trait ImageNumberContainer {
+    fn update(&mut self, index: usize, b: bool);
+}
+
+impl<P: ImageDataProvider, C: ImageNumberContainer> ImageNumberGenerator<P, C> {
+    pub fn new(height: u8, provider: P, container: C) -> Self {
         Self {
             height,
-            n0,
-            n1,
-            n2,
-            n3,
-            n4,
-            n5,
-            n6,
-            n7,
-            n8,
-            n9,
-            period,
+            provider,
             container,
         }
     }
 
-    fn img(&self, n: u8) -> &ImageNumberSource<T> {
-        match n {
-            0 => &self.n0,
-            1 => &self.n1,
-            2 => &self.n2,
-            3 => &self.n3,
-            4 => &self.n4,
-            5 => &self.n5,
-            6 => &self.n6,
-            7 => &self.n7,
-            8 => &self.n8,
-            9 => &self.n9,
-            255 => &self.period,
-            _ => &self.n0, // unreachable
-        }
-    }
-
-    fn w(&self, n: u8) -> u8 {
-        self.img(n).0
-    }
-
-    pub fn split_into_each_digit(&self, n: usize) -> (usize, [(u8, u8); 16], usize, usize) {
+    pub fn each_digit(&self, n: usize) -> (usize, [(u8, u8); 16], usize, usize) {
         let mut nums = [(0, 0); 16];
         let mut l = 0;
         let mut now = n;
         let mut width = 0;
         while now > 0 {
             let n = (now % 10) as u8;
-            let w = self.w(n);
+            let w = self.provider.width(n);
             width += w;
             nums[l] = (n, w);
             l += 1;
@@ -90,17 +44,14 @@ impl<T: AsRef<[u8]>, C: ImageNumberContainer> ImageNumberGenerator<T, C> {
         (l, nums, width as usize + (l - 1), self.height as usize)
     }
 
-    fn pixels(&self, n: u8) -> &[u8] {
-        self.img(n).2.as_ref()
-    }
-
     pub fn update_container(&mut self, n: usize) -> (usize, usize) {
-        let (l, v, canvas_w, canvas_h) = self.split_into_each_digit(n);
+        let (l, v, canvas_w, canvas_h) = self.each_digit(n);
 
         let mut offset = 0;
 
         for (i, (n, w)) in v[0..l].iter().rev().enumerate() {
             let owned = self
+                .provider
                 .pixels(*n)
                 .iter()
                 .map(|n| *n)
@@ -114,7 +65,7 @@ impl<T: AsRef<[u8]>, C: ImageNumberContainer> ImageNumberGenerator<T, C> {
                 .enumerate()
                 .for_each(|(y, row)| {
                     row.into_iter().enumerate().for_each(|(step_x, b)| {
-                        self.container.edit(y * canvas_w + offset + step_x, *b)
+                        self.container.update(y * canvas_w + offset + step_x, *b)
                     });
                 });
 
@@ -126,7 +77,7 @@ impl<T: AsRef<[u8]>, C: ImageNumberContainer> ImageNumberGenerator<T, C> {
 
             // 文字間のスペース分の古いピクセルを消す
             for y in 0..canvas_h {
-                self.container.edit(y * canvas_w + offset - 1, false)
+                self.container.update(y * canvas_w + offset - 1, false)
             }
         }
 
@@ -134,18 +85,9 @@ impl<T: AsRef<[u8]>, C: ImageNumberContainer> ImageNumberGenerator<T, C> {
     }
 }
 
-pub trait Provider {
-    fn src(&self, n: u8) -> &[u8];
-    fn w(&self, n: u8) -> u8;
-}
-
-pub trait ImageNumberContainer {
-    fn edit(&mut self, index: usize, b: bool);
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::{ImageNumberContainer, ImageNumberGenerator};
+    use crate::{ImageDataProvider, ImageNumberContainer, ImageNumberGenerator};
     use itertools::Itertools;
 
     const VEC_NUM_1: (u8, u8, [u8; 10]) = (3, 10, [0, 44, 151, 0, 0, 0, 0, 0, 0, 0]);
@@ -160,6 +102,44 @@ mod tests {
     const VEC_NUM_0: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 232, 198, 46, 0, 0, 0, 0, 0]);
     const VEC_NUM_PERIOD: (u8, u8, [u8; 10]) = (2, 10, [0, 15, 0, 0, 0, 0, 0, 0, 0, 0]);
 
+    struct ProviderClient;
+
+    impl ImageDataProvider for ProviderClient {
+        fn pixels(&self, n: u8) -> &[u8] {
+            match n {
+                0 => &VEC_NUM_0.2,
+                1 => &VEC_NUM_1.2,
+                2 => &VEC_NUM_2.2,
+                3 => &VEC_NUM_3.2,
+                4 => &VEC_NUM_4.2,
+                5 => &VEC_NUM_5.2,
+                6 => &VEC_NUM_6.2,
+                7 => &VEC_NUM_7.2,
+                8 => &VEC_NUM_8.2,
+                9 => &VEC_NUM_9.2,
+                255 => &VEC_NUM_PERIOD.2,
+                _ => unreachable!(), // unreachable
+            }
+        }
+
+        fn width(&self, n: u8) -> u8 {
+            match n {
+                0 => VEC_NUM_0.0,
+                1 => VEC_NUM_1.0,
+                2 => VEC_NUM_2.0,
+                3 => VEC_NUM_3.0,
+                4 => VEC_NUM_4.0,
+                5 => VEC_NUM_5.0,
+                6 => VEC_NUM_6.0,
+                7 => VEC_NUM_7.0,
+                8 => VEC_NUM_8.0,
+                9 => VEC_NUM_9.0,
+                255 => VEC_NUM_PERIOD.0,
+                _ => unreachable!(), // unreachable
+            }
+        }
+    }
+
     fn print(canvas_w: usize, canvas_h: usize, data: &[bool]) {
         for row in &data.iter().take(canvas_w * canvas_h).chunks(canvas_w) {
             row.for_each(|b| print!("{}", if *b { "■" } else { "□" }));
@@ -168,27 +148,13 @@ mod tests {
     }
 
     impl ImageNumberContainer for [bool; 300] {
-        fn edit(&mut self, index: usize, b: bool) {
+        fn update(&mut self, index: usize, b: bool) {
             self[index] = b;
         }
     }
 
-    fn numbers() -> ImageNumberGenerator<[u8; 10], [bool; 300]> {
-        ImageNumberGenerator::new(
-            10,
-            VEC_NUM_0,
-            VEC_NUM_1,
-            VEC_NUM_2,
-            VEC_NUM_3,
-            VEC_NUM_4,
-            VEC_NUM_5,
-            VEC_NUM_6,
-            VEC_NUM_7,
-            VEC_NUM_8,
-            VEC_NUM_9,
-            VEC_NUM_PERIOD,
-            [false; 300],
-        )
+    fn numbers() -> ImageNumberGenerator<ProviderClient, [bool; 300]> {
+        ImageNumberGenerator::new(10, ProviderClient, [false; 300])
     }
 
     #[test]

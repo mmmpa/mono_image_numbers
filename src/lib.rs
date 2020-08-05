@@ -1,24 +1,22 @@
 use bit_iterator::BitIterator;
-use itertools::Itertools;
 
-pub type ImageNumberSource<T> = (u8, u8, T);
-
-pub struct ImageNumberGenerator<P: ImageDataProvider, C: ImageNumberContainer> {
+pub struct MonoImageNumberGenerator<P: SourceProvider, C: DataContainer> {
     height: u8,
     provider: P,
     container: C,
 }
 
-pub trait ImageDataProvider {
+pub trait SourceProvider {
     fn pixels(&self, n: u8) -> &[u8];
     fn width(&self, n: u8) -> u8;
 }
 
-pub trait ImageNumberContainer {
+pub trait DataContainer {
     fn update(&mut self, index: usize, b: bool);
+    fn data(&self) -> &[bool];
 }
 
-impl<P: ImageDataProvider, C: ImageNumberContainer> ImageNumberGenerator<P, C> {
+impl<P: SourceProvider, C: DataContainer> MonoImageNumberGenerator<P, C> {
     pub fn new(height: u8, provider: P, container: C) -> Self {
         Self {
             height,
@@ -87,7 +85,7 @@ impl<P: ImageDataProvider, C: ImageNumberContainer> ImageNumberGenerator<P, C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{ImageDataProvider, ImageNumberContainer, ImageNumberGenerator};
+    use crate::{DataContainer, MonoImageNumberGenerator, SourceProvider};
     use itertools::Itertools;
 
     const VEC_NUM_1: (u8, u8, [u8; 10]) = (3, 10, [0, 44, 151, 0, 0, 0, 0, 0, 0, 0]);
@@ -103,8 +101,9 @@ mod tests {
     const VEC_NUM_PERIOD: (u8, u8, [u8; 10]) = (2, 10, [0, 15, 0, 0, 0, 0, 0, 0, 0, 0]);
 
     struct ProviderClient;
+    struct ContainerClient([bool; 300]);
 
-    impl ImageDataProvider for ProviderClient {
+    impl SourceProvider for ProviderClient {
         fn pixels(&self, n: u8) -> &[u8] {
             match n {
                 0 => &VEC_NUM_0.2,
@@ -147,14 +146,18 @@ mod tests {
         }
     }
 
-    impl ImageNumberContainer for [bool; 300] {
+    impl DataContainer for ContainerClient {
         fn update(&mut self, index: usize, b: bool) {
-            self[index] = b;
+            self.0[index] = b;
+        }
+
+        fn data(&self) -> &[bool] {
+            &self.0
         }
     }
 
-    fn numbers() -> ImageNumberGenerator<ProviderClient, [bool; 300]> {
-        ImageNumberGenerator::new(10, ProviderClient, [false; 300])
+    fn numbers() -> MonoImageNumberGenerator<ProviderClient, ContainerClient> {
+        MonoImageNumberGenerator::new(10, ProviderClient, ContainerClient([false; 300]))
     }
 
     #[test]
@@ -162,9 +165,9 @@ mod tests {
         let mut n = numbers();
 
         let (w, h) = n.update_container(11185);
-        print(w, h, &n.container);
+        print(w, h, n.container.data());
 
         let (w, h) = n.update_container(20);
-        print(w, h, &n.container);
+        print(w, h, n.container.data());
     }
 }

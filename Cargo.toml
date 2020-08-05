@@ -1,5 +1,5 @@
 [package]
-name = "vec_image_number_generator"
+name = "mono_image_number_generator"
 version = "0.1.0"
 authors = ["mmmpa <mmmpa.mmmpa@gmail.com>"]
 edition = "2018"

@@ -112,11 +112,6 @@ impl<T: AsRef<[u8]>> Numbers<T> {
             offset += *w as usize + 1;
         }
 
-        for row in &data.iter().chunks(canvas_w) {
-            row.for_each(|b| print!("{}", if *b { "■" } else { "□" }));
-            println!("");
-        }
-
         (canvas_w, canvas_h, data)
     }
 }
@@ -124,6 +119,7 @@ impl<T: AsRef<[u8]>> Numbers<T> {
 #[cfg(test)]
 mod tests {
     use crate::Numbers;
+    use itertools::Itertools;
 
     const VEC_NUM_1: (u8, u8, [u8; 10]) = (3, 10, [0, 44, 151, 0, 0, 0, 0, 0, 0, 0]);
     const VEC_NUM_2: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 232, 136, 159, 0, 0, 0, 0, 0]);
@@ -136,6 +132,13 @@ mod tests {
     const VEC_NUM_9: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 232, 197, 225, 17, 0, 0, 0, 0]);
     const VEC_NUM_0: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 232, 198, 46, 0, 0, 0, 0, 0]);
     const VEC_NUM_PERIOD: (u8, u8, [u8; 10]) = (2, 10, [0, 15, 0, 0, 0, 0, 0, 0, 0, 0]);
+
+    fn print(canvas_w: usize, data: &[bool]) {
+        for row in &data.iter().chunks(canvas_w) {
+            row.for_each(|b| print!("{}", if *b { "■" } else { "□" }));
+            print!("\n");
+        }
+    }
 
     fn numbers() -> Numbers<[u8; 10]> {
         Numbers::new(
@@ -158,6 +161,7 @@ mod tests {
     fn test() {
         let n = numbers();
 
-        n.generate(11185);
+        let (w, h, data) = n.generate(11185);
+        print(w, &data);
     }
 }

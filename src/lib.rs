@@ -3,7 +3,7 @@ use itertools::Itertools;
 
 pub type VecImage<T> = (u8, u8, T);
 
-pub struct Numbers<T> {
+pub struct Numbers<T: AsRef<[u8]>> {
     height: u8,
     n0: VecImage<T>,
     n1: VecImage<T>,
@@ -18,7 +18,7 @@ pub struct Numbers<T> {
     period: VecImage<T>,
 }
 
-impl<T> Numbers<T> {
+impl<T: AsRef<[u8]>> Numbers<T> {
     pub fn new(
         height: u8,
         n0: VecImage<T>,
@@ -69,7 +69,7 @@ impl<T> Numbers<T> {
         self.img(n).0
     }
 
-    pub fn num_vec(&self, n: usize) -> (usize, [(u8, u8); 16], Vec<bool>) {
+    pub fn num_vec(&self, n: usize) -> (usize, [(u8, u8); 16], usize, usize) {
         let mut nums = [(0, 0); 16];
         let mut l = 0;
         let mut now = n;
@@ -83,34 +83,41 @@ impl<T> Numbers<T> {
             now /= 10
         }
 
-        println!("{:?}", nums.as_ref());
-
-        (l, nums, vec![false; (width * self.height) as usize])
+        (l, nums, width as usize + (l - 1), self.height as usize)
     }
-}
-
-impl Numbers<[u8; 10]> {
-    fn bits(&self, n: u8) -> &[u8] {
-        &self.img(n).2
+    fn pixels(&self, n: u8) -> &[u8] {
+        self.img(n).2.as_ref()
     }
 
-    pub fn generate(&self, n: usize) {
-        let (l, v, img) = self.num_vec(n);
-        let offset = 0;
+    pub fn generate(&self, n: usize) -> (usize, usize, Vec<bool>) {
+        let (l, v, canvas_w, canvas_h) = self.num_vec(n);
+        let mut data = vec![false; canvas_w as usize * canvas_h as usize];
+
+        let mut offset = 0;
+
         for (n, w) in v[0..l].iter().rev() {
-            let it = self
-                .bits(*n)
+            self.pixels(*n)
                 .iter()
                 .map(|n| *n)
                 .flat_map(|n| BitIterator::from(n))
-                .take((w * self.height) as usize)
+                .take(*w as usize * canvas_h)
                 .chunks(*w as usize)
                 .into_iter()
-                .for_each(|row| {
-                    row.into_iter().for_each(|b| print!("{}", b as u8));
-                    print!("\n")
+                .enumerate()
+                .for_each(|(y, row)| {
+                    row.into_iter()
+                        .enumerate()
+                        .for_each(|(step_x, b)| data[y * canvas_w + offset + step_x] = b);
                 });
+            offset += *w as usize + 1;
         }
+
+        for row in &data.iter().chunks(canvas_w) {
+            row.for_each(|b| print!("{}", if *b { "■" } else { "□" }));
+            println!("");
+        }
+
+        (canvas_w, canvas_h, data)
     }
 }
 
@@ -151,6 +158,6 @@ mod tests {
     fn test() {
         let n = numbers();
 
-        n.generate(11145);
+        n.generate(11185);
     }
 }

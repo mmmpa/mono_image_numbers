@@ -1,4 +1,5 @@
 use bit_iterator::BitIterator;
+use std::mem::swap;
 
 pub struct MonoImageNumbers<P: SourceProvider, C: DataContainer> {
     height: u8,
@@ -16,6 +17,9 @@ pub trait DataContainer {
     fn data(&self) -> &[bool];
 }
 
+pub const MINUS: u8 = 254;
+pub const PERIOD: u8 = 255;
+
 impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
     pub fn new(height: u8, provider: P, container: C) -> Self {
         Self {
@@ -25,11 +29,18 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
         }
     }
 
-    pub fn each_digit(&self, n: usize) -> (usize, [(u8, u8); 16], usize, usize) {
+    fn each_digit(&self, n: isize) -> (usize, [(u8, u8); 16], usize, usize) {
         let mut nums = [(0, 0); 16];
         let mut l = 0;
         let mut now = n;
         let mut width = 0;
+        let mut minus = false;
+
+        if now < 0 {
+            minus = true;
+            now *= -1;
+        }
+
         while now > 0 {
             let n = (now % 10) as u8;
             let w = self.provider.width(n);
@@ -39,12 +50,18 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
             now /= 10
         }
 
+        if minus {
+            let w = self.provider.width(MINUS);
+            width += w;
+            nums[l] = (MINUS, w);
+            l += 1;
+        }
+
         (l, nums, width as usize + (l - 1), self.height as usize)
     }
 
-    pub fn update_container(&mut self, n: usize) -> (usize, usize) {
-        let (l, v, canvas_w, canvas_h) = self.each_digit(n);
-
+    pub fn update_c(&mut self, each: (usize, [(u8, u8); 16], usize, usize)) -> (usize, usize) {
+        let (l, v, canvas_w, canvas_h) = each;
         let mut offset = 0;
 
         for (i, (n, w)) in v[0..l].iter().rev().enumerate() {
@@ -81,11 +98,33 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
 
         (canvas_w, canvas_h)
     }
+
+    pub fn update(&mut self, n: isize) -> (usize, usize) {
+        self.update_c(self.each_digit(n))
+    }
+
+    pub fn update_f(&mut self, f: f64, level: usize) -> (usize, usize) {
+        let n = (f * (10_i32.pow(level as u32) as f64) as f64).floor() as isize;
+        let (mut l, mut v, mut canvas_w, canvas_h) = self.each_digit(n);
+
+        let w = self.provider.width(PERIOD);
+
+        for i in (level..l + 1).into_iter().rev() {
+            v[i + 1] = v[i];
+        }
+
+        v[level as usize] = (PERIOD, w);
+
+        l += 1;
+        canvas_w += w as usize + 1;
+
+        self.update_c((l, v, canvas_w, canvas_h))
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{DataContainer, MonoImageNumbers, SourceProvider};
+    use crate::{DataContainer, MonoImageNumbers, SourceProvider, MINUS, PERIOD};
     use itertools::Itertools;
 
     const VEC_NUM_1: (u8, u8, [u8; 10]) = (3, 10, [0, 44, 151, 0, 0, 0, 0, 0, 0, 0]);
@@ -99,6 +138,7 @@ mod tests {
     const VEC_NUM_9: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 232, 197, 225, 17, 0, 0, 0, 0]);
     const VEC_NUM_0: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 232, 198, 46, 0, 0, 0, 0, 0]);
     const VEC_NUM_PERIOD: (u8, u8, [u8; 10]) = (2, 10, [0, 15, 0, 0, 0, 0, 0, 0, 0, 0]);
+    const VEC_NUM_MINUS: (u8, u8, [u8; 7]) = (4, 10, [0, 0, 240, 0, 0, 0, 0]);
 
     struct ProviderClient;
     struct ContainerClient([bool; 300]);
@@ -116,7 +156,8 @@ mod tests {
                 7 => &VEC_NUM_7.2,
                 8 => &VEC_NUM_8.2,
                 9 => &VEC_NUM_9.2,
-                255 => &VEC_NUM_PERIOD.2,
+                MINUS => &VEC_NUM_MINUS.2,
+                PERIOD => &VEC_NUM_PERIOD.2,
                 _ => unreachable!(), // unreachable
             }
         }
@@ -133,17 +174,21 @@ mod tests {
                 7 => VEC_NUM_7.0,
                 8 => VEC_NUM_8.0,
                 9 => VEC_NUM_9.0,
-                255 => VEC_NUM_PERIOD.0,
+                MINUS => VEC_NUM_MINUS.0,
+                PERIOD => VEC_NUM_PERIOD.0,
                 _ => unreachable!(), // unreachable
             }
         }
     }
 
-    fn print(canvas_w: usize, canvas_h: usize, data: &[bool]) {
+    fn to_s(canvas_w: usize, canvas_h: usize, data: &[bool]) -> String {
+        // \n is for easy assertion
+        let mut result = "\n".to_string();
         for row in &data.iter().take(canvas_w * canvas_h).chunks(canvas_w) {
-            row.for_each(|b| print!("{}", if *b { "■" } else { "□" }));
-            print!("\n");
+            row.for_each(|b| result += &format!("{}", if *b { "■" } else { "□" }));
+            result += "\n";
         }
+        result
     }
 
     impl DataContainer for ContainerClient {
@@ -164,10 +209,80 @@ mod tests {
     fn test() {
         let mut n = numbers();
 
-        let (w, h) = n.update_container(11185);
-        print(w, h, n.container.data());
+        let (w, h) = n.update(11185);
+        assert_eq!(23, w);
+        assert_eq!(10, h);
+        assert_eq!(
+            r#"
+□□□□□□□□□□□□□■■■□□□□□□□
+□□□□□□□□□□□□■□□□■□□□□□□
+□□□□□□□□□□□□■□□□■□□□□□□
+□■□□□■□□□■□□□■■■□□□■■■■
+■■□□■■□□■■□□■□□□■□□■□□□
+□■□□□■□□□■□□■□□□■□□■■■□
+□■□□□■□□□■□□■□□□■□□□□□■
+■■■□■■■□■■■□□■■■□□□□□□■
+□□□□□□□□□□□□□□□□□□■□□□■
+□□□□□□□□□□□□□□□□□□□■■■□
+"#,
+            to_s(w, h, n.container.data())
+        );
 
-        let (w, h) = n.update_container(20);
-        print(w, h, n.container.data());
+        let (w, h) = n.update(20);
+        assert_eq!(11, w);
+        assert_eq!(10, h);
+        assert_eq!(
+            r#"
+□□□□□□□□□□□
+□□□□□□□□□□□
+□□□□□□□□□□□
+□■■■□□□■■■□
+■□□□■□■□□□■
+□□□■□□■□□□■
+□□■□□□■□□□■
+■■■■■□□■■■□
+□□□□□□□□□□□
+□□□□□□□□□□□
+"#,
+            to_s(w, h, n.container.data())
+        );
+
+        let (w, h) = n.update(-119);
+        assert_eq!(18, w);
+        assert_eq!(10, h);
+        assert_eq!(
+            r#"
+□□□□□□□□□□□□□□□□□□
+□□□□□□□□□□□□□□□□□□
+□□□□□□□□□□□□□□□□□□
+□□□□□□■□□□■□□□■■■□
+■■■■□■■□□■■□□■□□□■
+□□□□□□■□□□■□□■□□□■
+□□□□□□■□□□■□□□■■■■
+□□□□□■■■□■■■□□□□□■
+□□□□□□□□□□□□□□□□■□
+□□□□□□□□□□□□□□□■□□
+"#,
+            to_s(w, h, n.container.data())
+        );
+
+        let (w, h) = n.update_f(-19.1234, 2);
+        assert_eq!(27, w);
+        assert_eq!(10, h);
+        assert_eq!(
+            r#"
+□□□□□□□□□□□□□□□□□□□□□□□□□□□
+□□□□□□□□□□□□□□□□□□□□□□□□□□□
+□□□□□□□□□□□□□□□□□□□□□□□□□□□
+□□□□□□■□□□■■■□□□□□□■□□□■■■□
+■■■■□■■□□■□□□■□□□□■■□□■□□□■
+□□□□□□■□□■□□□■□□□□□■□□□□□□■
+□□□□□□■□□□■■■■□■■□□■□□□□■■□
+□□□□□■■■□□□□□■□■■□■■■□□□□□■
+□□□□□□□□□□□□■□□□□□□□□□■□□□■
+□□□□□□□□□□□■□□□□□□□□□□□■■■□
+"#,
+            to_s(w, h, n.container.data())
+        );
     }
 }

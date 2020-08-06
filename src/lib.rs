@@ -7,8 +7,8 @@ pub struct MonoImageNumbers<P: SourceProvider, C: DataContainer> {
 }
 
 pub trait SourceProvider {
-    fn pixels(&self, n: u8) -> &[u8];
-    fn width(&self, n: u8) -> u8;
+    fn pixels(&self, n: char) -> &[u8];
+    fn width(&self, n: char) -> u8;
 }
 
 pub trait DataContainer {
@@ -16,12 +16,9 @@ pub trait DataContainer {
     fn data(&self) -> &[bool];
 }
 
-pub const MINUS: u8 = 254;
-pub const PERIOD: u8 = 255;
-
 struct PassArgument {
     length: usize,
-    char_and_width: [(u8, u8); 16],
+    char_and_width: [(char, u8); 16],
     canvas_width: usize,
 }
 
@@ -34,8 +31,24 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
         }
     }
 
+    fn n_to_char(&self, n: u8) -> char {
+        match n {
+            0 => '0',
+            1 => '1',
+            2 => '2',
+            3 => '3',
+            4 => '4',
+            5 => '5',
+            6 => '6',
+            7 => '7',
+            8 => '8',
+            9 => '9',
+            _ => unreachable!(), // unreachable
+        }
+    }
+
     fn each_digit(&self, n: isize) -> PassArgument {
-        let mut char_and_width = [(0, 0); 16];
+        let mut char_and_width = [('-', 0); 16];
         let mut length = 0;
         let mut now = n;
         let mut canvas_width = 0;
@@ -48,22 +61,23 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
 
         while now > 0 {
             let n = (now % 10) as u8;
-            let w = self.provider.width(n);
+            let c = self.n_to_char(n);
+            let w = self.provider.width(c);
             canvas_width += w as usize;
-            char_and_width[length] = (n, w);
+            char_and_width[length] = (c, w);
             length += 1;
             now /= 10
         }
 
         if minus {
-            let w = self.provider.width(MINUS);
+            let w = self.provider.width('-');
             canvas_width += w as usize;
-            char_and_width[length] = (MINUS, w);
+            char_and_width[length] = ('-', w);
             length += 1;
         }
 
         // margin between chars
-        canvas_width += (length - 1);
+        canvas_width += length - 1;
 
         PassArgument {
             length,
@@ -122,7 +136,6 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
 
     pub fn update_f(&mut self, f: f64, level: usize) -> (usize, usize) {
         // at first, build not float data
-
         let n = (f * (10_i32.pow(level as u32) as f64) as f64).floor() as isize;
         let PassArgument {
             length,
@@ -131,13 +144,13 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
         } = self.each_digit(n);
 
         // then insert period
-        let period_width = self.provider.width(PERIOD);
+        let period_width = self.provider.width('.');
 
         for i in (level..length + 1).into_iter().rev() {
             char_and_width[i + 1] = char_and_width[i];
         }
 
-        char_and_width[level] = (PERIOD, period_width);
+        char_and_width[level] = ('.', period_width);
 
         self.update_container(PassArgument {
             length: length + 1,
@@ -149,7 +162,7 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{DataContainer, MonoImageNumbers, SourceProvider, MINUS, PERIOD};
+    use crate::{DataContainer, MonoImageNumbers, SourceProvider};
     use itertools::Itertools;
 
     const VEC_NUM_1: (u8, u8, [u8; 10]) = (3, 10, [0, 44, 151, 0, 0, 0, 0, 0, 0, 0]);
@@ -169,38 +182,38 @@ mod tests {
     struct ContainerClient([bool; 300]);
 
     impl SourceProvider for ProviderClient {
-        fn pixels(&self, n: u8) -> &[u8] {
+        fn pixels(&self, n: char) -> &[u8] {
             match n {
-                0 => &VEC_NUM_0.2,
-                1 => &VEC_NUM_1.2,
-                2 => &VEC_NUM_2.2,
-                3 => &VEC_NUM_3.2,
-                4 => &VEC_NUM_4.2,
-                5 => &VEC_NUM_5.2,
-                6 => &VEC_NUM_6.2,
-                7 => &VEC_NUM_7.2,
-                8 => &VEC_NUM_8.2,
-                9 => &VEC_NUM_9.2,
-                MINUS => &VEC_NUM_MINUS.2,
-                PERIOD => &VEC_NUM_PERIOD.2,
+                '0' => &VEC_NUM_0.2,
+                '1' => &VEC_NUM_1.2,
+                '2' => &VEC_NUM_2.2,
+                '3' => &VEC_NUM_3.2,
+                '4' => &VEC_NUM_4.2,
+                '5' => &VEC_NUM_5.2,
+                '6' => &VEC_NUM_6.2,
+                '7' => &VEC_NUM_7.2,
+                '8' => &VEC_NUM_8.2,
+                '9' => &VEC_NUM_9.2,
+                '-' => &VEC_NUM_MINUS.2,
+                '.' => &VEC_NUM_PERIOD.2,
                 _ => unreachable!(), // unreachable
             }
         }
 
-        fn width(&self, n: u8) -> u8 {
+        fn width(&self, n: char) -> u8 {
             match n {
-                0 => VEC_NUM_0.0,
-                1 => VEC_NUM_1.0,
-                2 => VEC_NUM_2.0,
-                3 => VEC_NUM_3.0,
-                4 => VEC_NUM_4.0,
-                5 => VEC_NUM_5.0,
-                6 => VEC_NUM_6.0,
-                7 => VEC_NUM_7.0,
-                8 => VEC_NUM_8.0,
-                9 => VEC_NUM_9.0,
-                MINUS => VEC_NUM_MINUS.0,
-                PERIOD => VEC_NUM_PERIOD.0,
+                '0' => VEC_NUM_0.0,
+                '1' => VEC_NUM_1.0,
+                '2' => VEC_NUM_2.0,
+                '3' => VEC_NUM_3.0,
+                '4' => VEC_NUM_4.0,
+                '5' => VEC_NUM_5.0,
+                '6' => VEC_NUM_6.0,
+                '7' => VEC_NUM_7.0,
+                '8' => VEC_NUM_8.0,
+                '9' => VEC_NUM_9.0,
+                '-' => VEC_NUM_MINUS.0,
+                '.' => VEC_NUM_PERIOD.0,
                 _ => unreachable!(), // unreachable
             }
         }

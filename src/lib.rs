@@ -1,9 +1,18 @@
+#![no_std]
+
+#[cfg(test)]
+#[macro_use]
+extern crate std;
+
 use bit_iterator::BitIterator;
+use itertools::Itertools;
 
 pub struct MonoImageNumbers<P: SourceProvider, C: DataContainer> {
     height: u8,
     provider: P,
-    container: C,
+    // for splitting borrow
+    // https://doc.rust-lang.org/nomicon/borrow-splitting.html
+    container: Option<C>,
 }
 
 pub trait SourceProvider {
@@ -27,7 +36,7 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
         Self {
             height,
             provider,
-            container,
+            container: Some(container),
         }
     }
 
@@ -94,24 +103,21 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
         } = each;
         let canvas_h = self.height as usize;
         let mut offset = 0;
+        let mut container = self.container.take().unwrap();
 
         for (i, (char, char_width)) in char_and_width[0..length].iter().rev().enumerate() {
-            let owned = self
-                .provider
+            self.provider
                 .pixels(*char)
                 .iter()
                 .map(|n| *n)
                 .flat_map(|n| BitIterator::from(n))
                 .take(*char_width as usize * canvas_h)
-                .collect::<Vec<_>>();
-
-            owned
                 .chunks(*char_width as usize)
                 .into_iter()
                 .enumerate()
                 .for_each(|(y, row)| {
                     row.into_iter().enumerate().for_each(|(step_x, b)| {
-                        self.container.update(y * canvas_w + offset + step_x, *b)
+                        container.update(y * canvas_w + offset + step_x, b)
                     });
                 });
 
@@ -123,11 +129,17 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
 
             // 文字間のスペース分の古いピクセルを消す
             for y in 0..canvas_h {
-                self.container.update(y * canvas_w + offset - 1, false)
+                container.update(y * canvas_w + offset - 1, false)
             }
         }
 
+        self.container = Some(container);
+
         (canvas_w, canvas_h)
+    }
+
+    pub fn data(&self) -> &[bool] {
+        self.container.as_ref().unwrap().data()
     }
 
     pub fn update(&mut self, n: isize) -> (usize, usize) {
@@ -164,6 +176,7 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
 mod tests {
     use crate::{DataContainer, MonoImageNumbers, SourceProvider};
     use itertools::Itertools;
+    use std::prelude::v1::*;
 
     const VEC_NUM_1: (u8, u8, [u8; 10]) = (3, 10, [0, 44, 151, 0, 0, 0, 0, 0, 0, 0]);
     const VEC_NUM_2: (u8, u8, [u8; 10]) = (5, 10, [0, 0, 232, 136, 159, 0, 0, 0, 0, 0]);
@@ -263,7 +276,7 @@ mod tests {
 □□□□□□□□□□□□□□□□□□■□□□■
 □□□□□□□□□□□□□□□□□□□■■■□
 "#,
-            to_s(w, h, n.container.data())
+            to_s(w, h, n.data())
         );
     }
 
@@ -288,7 +301,7 @@ mod tests {
 □□□□□□□□□□□
 □□□□□□□□□□□
 "#,
-            to_s(w, h, n.container.data())
+            to_s(w, h, n.data())
         );
     }
 
@@ -312,7 +325,7 @@ mod tests {
 □□□□□□□□□□□□□□□□■□
 □□□□□□□□□□□□□□□■□□
 "#,
-            to_s(w, h, n.container.data())
+            to_s(w, h, n.data())
         );
     }
 
@@ -336,7 +349,7 @@ mod tests {
 □□□□□□□□□□□□■□□□□□□□□□■□□□■
 □□□□□□□□□□□■□□□□□□□□□□□■■■□
 "#,
-            to_s(w, h, n.container.data())
+            to_s(w, h, n.data())
         );
     }
 }

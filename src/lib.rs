@@ -7,12 +7,13 @@ extern crate std;
 use bit_iterator::BitIterator;
 use itertools::Itertools;
 
-pub struct MonoImageNumbers<P: SourceProvider, C: DataContainer> {
+pub struct MonoImageNumbers<P: SourceProvider, C: DataContainer<M>, M: Copy> {
     height: u8,
     provider: P,
     // for splitting borrow
     // https://doc.rust-lang.org/nomicon/borrow-splitting.html
     container: Option<C>,
+    mono: [M; 2],
 }
 
 pub trait SourceProvider {
@@ -20,9 +21,9 @@ pub trait SourceProvider {
     fn width(&self, n: char) -> u8;
 }
 
-pub trait DataContainer {
-    fn update(&mut self, index: usize, b: bool);
-    fn data(&self) -> &[bool];
+pub trait DataContainer<M> {
+    fn update(&mut self, index: usize, b: M);
+    fn data(&self) -> &[M];
 }
 
 struct PassArgument {
@@ -31,12 +32,13 @@ struct PassArgument {
     canvas_width: usize,
 }
 
-impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
-    pub fn new(height: u8, provider: P, container: C) -> Self {
+impl<P: SourceProvider, C: DataContainer<M>, M: Copy> MonoImageNumbers<P, C, M> {
+    pub fn new(height: u8, provider: P, container: C, mono: [M; 2]) -> Self {
         Self {
             height,
             provider,
             container: Some(container),
+            mono,
         }
     }
 
@@ -66,6 +68,19 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
         if now < 0 {
             minus = true;
             now *= -1;
+        }
+
+        if now == 0 {
+            let w = self.provider.width('0');
+            canvas_width += w as usize;
+            char_and_width[length] = ('0', w);
+            length += 1;
+
+            return PassArgument {
+                length,
+                char_and_width,
+                canvas_width,
+            };
         }
 
         while now > 0 {
@@ -117,7 +132,10 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
                 .enumerate()
                 .for_each(|(y, row)| {
                     row.into_iter().enumerate().for_each(|(step_x, b)| {
-                        container.update(y * canvas_w + offset + step_x, b)
+                        container.update(
+                            y * canvas_w + offset + step_x,
+                            if b { self.mono[1] } else { self.mono[0] },
+                        )
                     });
                 });
 
@@ -129,7 +147,7 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
 
             // 文字間のスペース分の古いピクセルを消す
             for y in 0..canvas_h {
-                container.update(y * canvas_w + offset - 1, false)
+                container.update(y * canvas_w + offset - 1, self.mono[0])
             }
         }
 
@@ -138,7 +156,7 @@ impl<P: SourceProvider, C: DataContainer> MonoImageNumbers<P, C> {
         (canvas_w, canvas_h)
     }
 
-    pub fn data(&self) -> &[bool] {
+    pub fn data(&self) -> &[M] {
         self.container.as_ref().unwrap().data()
     }
 
@@ -242,7 +260,7 @@ mod tests {
         result
     }
 
-    impl DataContainer for ContainerClient {
+    impl DataContainer<bool> for ContainerClient {
         fn update(&mut self, index: usize, b: bool) {
             self.0[index] = b;
         }
@@ -252,8 +270,13 @@ mod tests {
         }
     }
 
-    fn numbers() -> MonoImageNumbers<ProviderClient, ContainerClient> {
-        MonoImageNumbers::new(10, ProviderClient, ContainerClient([false; 300]))
+    fn numbers() -> MonoImageNumbers<ProviderClient, ContainerClient, bool> {
+        MonoImageNumbers::new(
+            10,
+            ProviderClient,
+            ContainerClient([false; 300]),
+            [false, true],
+        )
     }
 
     #[test]

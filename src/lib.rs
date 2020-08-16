@@ -4,8 +4,6 @@
 #[macro_use]
 extern crate std;
 
-use num_traits;
-
 use bit_iterator::BitIterator;
 
 pub struct MonoImageNumbers<P: SourceProvider, C: DataContainer<M>, M: Copy> {
@@ -166,7 +164,7 @@ impl<P: SourceProvider, C: DataContainer<M>, M: Copy> MonoImageNumbers<P, C, M> 
 
     pub fn update_f(&mut self, f: f32, level: usize) -> (usize, usize) {
         // at first, build not float data
-        let n = (f * (10_i32.pow(level as u32) as f32) as f32).floor() as isize;
+        let n = (f * (10_i32.pow(level as u32) as f32) as f32) as isize;
         let PassArgument {
             length,
             mut char_and_width,
@@ -366,11 +364,11 @@ mod tests {
 □□□□□□□□□□□□□□□□□□□□□□□□□□□
 □□□□□□■□□□■■■□□□□□□■□□□■■■□
 ■■■■□■■□□■□□□■□□□□■■□□■□□□■
-□□□□□□■□□■□□□■□□□□□■□□□□□□■
-□□□□□□■□□□■■■■□■■□□■□□□□■■□
-□□□□□■■■□□□□□■□■■□■■■□□□□□■
-□□□□□□□□□□□□■□□□□□□□□□■□□□■
-□□□□□□□□□□□■□□□□□□□□□□□■■■□
+□□□□□□■□□■□□□■□□□□□■□□□□□■□
+□□□□□□■□□□■■■■□■■□□■□□□□■□□
+□□□□□■■■□□□□□■□■■□■■■□■■■■■
+□□□□□□□□□□□□■□□□□□□□□□□□□□□
+□□□□□□□□□□□■□□□□□□□□□□□□□□□
 "#,
             to_s(w, h, n.data())
         );

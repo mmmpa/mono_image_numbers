@@ -162,9 +162,9 @@ impl<P: SourceProvider, C: DataContainer<M>, M: Copy> MonoImageNumbers<P, C, M> 
         self.update_container(self.each_digit(n))
     }
 
-    pub fn update_f(&mut self, f: f64, level: usize) -> (usize, usize) {
+    pub fn update_f(&mut self, f: f32, level: usize) -> (usize, usize) {
         // at first, build not float data
-        let n = (f * (10_i32.pow(level as u32) as f64) as f64).floor() as isize;
+        let n = (f * (10_i32.pow(level as u32) as f32) as f32).floor() as isize;
         let PassArgument {
             length,
             mut char_and_width,

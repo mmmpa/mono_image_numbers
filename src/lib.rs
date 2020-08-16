@@ -5,7 +5,6 @@
 extern crate std;
 
 use bit_iterator::BitIterator;
-use itertools::Itertools;
 
 pub struct MonoImageNumbers<P: SourceProvider, C: DataContainer<M>, M: Copy> {
     height: u8,
@@ -127,16 +126,15 @@ impl<P: SourceProvider, C: DataContainer<M>, M: Copy> MonoImageNumbers<P, C, M> 
                 .map(|n| *n)
                 .flat_map(|n| BitIterator::from(n))
                 .take(*char_width as usize * canvas_h)
-                .chunks(*char_width as usize)
                 .into_iter()
                 .enumerate()
-                .for_each(|(y, row)| {
-                    row.into_iter().enumerate().for_each(|(step_x, b)| {
-                        container.update(
-                            y * canvas_w + offset + step_x,
-                            if b { self.mono[1] } else { self.mono[0] },
-                        )
-                    });
+                .for_each(|(index, b)| {
+                    let y = index / *char_width as usize;
+                    let step_x = index % *char_width as usize;
+                    container.update(
+                        y * canvas_w + offset + step_x,
+                        if b { self.mono[1] } else { self.mono[0] },
+                    )
                 });
 
             offset += *char_width as usize + 1;

@@ -4,6 +4,8 @@
 #[macro_use]
 extern crate std;
 
+use num_traits;
+
 use bit_iterator::BitIterator;
 
 pub struct MonoImageNumbers<P: SourceProvider, C: DataContainer<M>, M: Copy> {

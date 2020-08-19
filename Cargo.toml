@@ -8,6 +8,3 @@ edition = "2018"
 
 [dependencies]
 bit_iterator = { git = "https://github.com/mmmpa/bit_iterator" }
-
-[dev-dependencies]
-itertools = { version = "0.9.0" }
